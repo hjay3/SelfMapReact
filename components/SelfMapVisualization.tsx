@@ -1,6 +1,4 @@
-
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import * as d3 from 'd3';
 import { Entry, Association, SizeMetric, RadiusMode } from '../types/selfmap';
 import {
   computePositionByValence,
@@ -12,6 +10,8 @@ import {
   R_MAX
 } from '../utils/visualization';
 import { HoverInfo } from './HoverInfo';
+
+declare const d3: any;
 
 interface SelfMapVisualizationProps {
   entries: Entry[];
@@ -28,7 +28,7 @@ interface SelfMapVisualizationProps {
   highlightedNodes?: string[];
 }
 
-const CATEGORY_SYMBOLS: Record<string, d3.SymbolType> = {
+const CATEGORY_SYMBOLS: Record<string, any> = {
   'People': d3.symbolCircle,
   'Accomplishments': d3.symbolSquare,
   'Life Story': d3.symbolDiamond,
@@ -60,7 +60,7 @@ export const SelfMapVisualization = ({
     const sizes = getSizesForCategory(entries, sizeMetric, weightedDegrees, sizeScale);
     const colors = getColorsForCategory(entries, opacity);
     return { positions, weightedDegrees, sizes, colors };
-  }, [entries, sizeMetric, radiusMode, sizeScale, opacity]);
+  }, [entries, sizeMetric, radiusMode, sizeScale, opacity, associations]);
 
   useEffect(() => {
     if (!svgRef.current || entries.length === 0) return;
@@ -68,15 +68,18 @@ export const SelfMapVisualization = ({
     const svgElement = svgRef.current;
     const width = svgElement.clientWidth;
     const height = svgElement.clientHeight;
+    
+    if (width === 0 || height === 0) return; // Wait for the container to have dimensions
 
     const svg = d3.select(svgElement);
     svg.selectAll('*').remove(); // Clear previous renders
 
     const g = svg.append('g');
 
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
+    // fix: Removed type arguments from d3.zoom() because the global `d3` object is typed as `any`, which doesn't support generics.
+    const zoom = d3.zoom()
       .scaleExtent([0.3, 5])
-      .on('zoom', (event) => {
+      .on('zoom', (event: any) => {
         g.attr('transform', event.transform);
       });
     
@@ -91,12 +94,12 @@ export const SelfMapVisualization = ({
       .data(ringData)
       .enter().append('path')
       .attr('class', 'ring')
-      .attr('d', d => {
+      .attr('d', (d: any) => {
         const line = d3.line()
-          .x(p => p[0])
-          .y(p => p[1])
+          .x((p: any) => p[0])
+          .y((p: any) => p[1])
           .curve(d3.curveBasisClosed);
-        const points: [number, number][] = d.x.map((x, i) => [x, d.y[i]]);
+        const points: [number, number][] = d.x.map((x: number, i: number) => [x, d.y[i]]);
         return line(points);
       })
       .attr('fill', 'none')
@@ -114,17 +117,17 @@ export const SelfMapVisualization = ({
         .data(associations)
         .enter().append('line')
         .attr('class', 'edge')
-        .attr('x1', d => positions[d.src]?.x ?? 0)
-        .attr('y1', d => positions[d.src]?.y ?? 0)
-        .attr('x2', d => positions[d.dst]?.x ?? 0)
-        .attr('y2', d => positions[d.dst]?.y ?? 0)
-        .attr('stroke', d => {
+        .attr('x1', (d: Association) => positions[d.src]?.x ?? 0)
+        .attr('y1', (d: Association) => positions[d.src]?.y ?? 0)
+        .attr('x2', (d: Association) => positions[d.dst]?.x ?? 0)
+        .attr('y2', (d: Association) => positions[d.dst]?.y ?? 0)
+        .attr('stroke', (d: Association) => {
             if (d.relation === 'affirms') return 'hsl(var(--valence-positive))';
             if (d.relation === 'threatens') return 'hsl(var(--valence-negative))';
             return 'hsl(var(--valence-neutral))';
         })
         .attr('stroke-opacity', 0.6)
-        .attr('stroke-width', d => 1 + d.weight * 2.5);
+        .attr('stroke-width', (d: Association) => 1 + d.weight * 2.5);
     }
     
     // -- NODES --
@@ -133,32 +136,32 @@ export const SelfMapVisualization = ({
       .data(entries, (d: any) => d.label)
       .join('g')
       .attr('class', 'node')
-      .attr('transform', d => `translate(${positions[d.label]?.x ?? 0}, ${positions[d.label]?.y ?? 0})`)
+      .attr('transform', (d: Entry) => `translate(${positions[d.label]?.x ?? 0}, ${positions[d.label]?.y ?? 0})`)
       .style('cursor', 'pointer');
     
     // Glow effect
     nodes.append('path')
-      .attr('d', (d, i) => d3.symbol().type(CATEGORY_SYMBOLS[d.category]).size(sizes[i] * 2.5)())
-      .attr('fill', (d, i) => colors[i])
+      .attr('d', (d: Entry, i: number) => d3.symbol().type(CATEGORY_SYMBOLS[d.category]).size(sizes[i] * 2.5)())
+      .attr('fill', (d: Entry, i: number) => colors[i])
       .style('opacity', 0.25);
     
     // Main symbol
     nodes.append('path')
-      .attr('d', (d, i) => d3.symbol().type(CATEGORY_SYMBOLS[d.category]).size(sizes[i])())
-      .attr('fill', (d, i) => colors[i])
+      .attr('d', (d: Entry, i: number) => d3.symbol().type(CATEGORY_SYMBOLS[d.category]).size(sizes[i])())
+      .attr('fill', (d: Entry, i: number) => colors[i])
       .attr('stroke', 'rgba(0,0,0,0.5)')
       .attr('stroke-width', 1.5);
       
     // -- LABELS --
     if (showLabels) {
       const labelGroup = g.append('g').attr('class', 'labels');
-      const labels = labelGroup.selectAll('text.label')
+      labelGroup.selectAll('text.label')
         .data(entries, (d: any) => d.label)
         .join('text')
         .attr('class', 'label')
-        .attr('x', d => (positions[d.label]?.x ?? 0))
-        .attr('y', d => (positions[d.label]?.y ?? 0) - 12)
-        .text(d => d.label)
+        .attr('x', (d: Entry) => (positions[d.label]?.x ?? 0))
+        .attr('y', (d: Entry) => (positions[d.label]?.y ?? 0) - 12)
+        .text((d: Entry) => d.label)
         .attr('fill', 'hsl(var(--foreground))')
         .style('font-size', '10px')
         .attr('text-anchor', 'middle')
@@ -177,7 +180,7 @@ export const SelfMapVisualization = ({
       .style('font-size', '12px').attr('text-anchor', 'middle');
 
     // -- INTERACTIVITY --
-    nodes.on('mouseover', function(event, d) {
+    nodes.on('mouseover', function(event: MouseEvent, d: Entry) {
       setHoveredEntry(d);
       const connected = new Set([d.label]);
       associations.forEach(a => {
@@ -185,8 +188,8 @@ export const SelfMapVisualization = ({
         if (a.dst === d.label) connected.add(a.src);
       });
 
-      nodes.transition().duration(200).style('opacity', n => connected.has(n.label) ? 1.0 : 0.2);
-      d3.selectAll('.edge').transition().duration(200).style('opacity', e => (e.src === d.label || e.dst === d.label) ? 1.0 : 0.1);
+      nodes.transition().duration(200).style('opacity', (n: any) => connected.has(n.label) ? 1.0 : 0.2);
+      d3.selectAll('.edge').transition().duration(200).style('opacity', (e: any) => (e.src === d.label || e.dst === d.label) ? 1.0 : 0.1);
       
       if (imageTimeout.current) clearTimeout(imageTimeout.current);
       setHoveredImage(`https://picsum.photos/seed/${d.label}/200`);
@@ -198,15 +201,15 @@ export const SelfMapVisualization = ({
       nodes.transition().duration(200).style('opacity', 1.0);
       d3.selectAll('.edge').transition().duration(200).style('opacity', 0.6);
     })
-    .on('click', function(event, d) {
+    .on('click', function(event: MouseEvent, d: Entry) {
       setSelectedEntry(prev => prev?.label === d.label ? null : d);
     });
 
     // Update selected/highlighted styles
     nodes.select('path:last-child')
         .transition().duration(200)
-        .attr('stroke', d => selectedEntry?.label === d.label ? 'hsl(var(--foreground))' : 'rgba(0,0,0,0.5)')
-        .attr('stroke-width', d => selectedEntry?.label === d.label ? 3 : 1.5);
+        .attr('stroke', (d: any) => selectedEntry?.label === d.label ? 'hsl(var(--foreground))' : 'rgba(0,0,0,0.5)')
+        .attr('stroke-width', (d: any) => selectedEntry?.label === d.label ? 3 : 1.5);
 
   }, [entries, associations, positions, sizes, colors, showEdges, showLabels, selectedEntry]);
 
