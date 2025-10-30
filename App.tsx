@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useMemo } from 'react';
 import { SelfMapData, SizeMetric, RadiusMode } from './types/selfmap';
 import { DEFAULT_DATA } from './data/sample';
@@ -6,7 +5,8 @@ import { SelfMapVisualization } from './components/SelfMapVisualization';
 import { ControlPanel } from './components/ControlPanel';
 import { GeminiPanel } from './components/GeminiPanel';
 import { generateSelfMapData } from './services/geminiService';
-import { Github } from 'lucide-react';
+import { KeyboardShortcuts } from './components/KeyboardShortcuts';
+import { Github, X } from 'lucide-react';
 
 const App = () => {
   const [data, setData] = useState<SelfMapData>(DEFAULT_DATA);
@@ -19,6 +19,7 @@ const App = () => {
   const [pulsationMode, setPulsationMode] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState<boolean>(false);
   
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -28,10 +29,16 @@ const App = () => {
         try {
           const content = e.target?.result as string;
           const jsonData = JSON.parse(content);
-          // Add validation here if needed
-          setData(jsonData);
-        } catch (err) {
-          setError('Failed to parse JSON file.');
+          
+          // Add basic validation for the JSON structure
+          if (Array.isArray(jsonData.entries) && Array.isArray(jsonData.associations)) {
+            setData(jsonData);
+            setError(null);
+          } else {
+            throw new Error("Invalid Self Map data structure in JSON file.");
+          }
+        } catch (err: any) {
+          setError(err.message || 'Failed to parse JSON file.');
           console.error(err);
         }
       };
@@ -66,14 +73,16 @@ const App = () => {
         </a>
       </header>
 
-      {error && (
-        <div className="bg-destructive text-destructive-foreground p-4 m-4 rounded-md">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 p-4 overflow-hidden">
         <div className="flex flex-col gap-4 overflow-y-auto pr-2">
+          {error && (
+            <div className="bg-destructive text-destructive-foreground p-3 rounded-md flex justify-between items-center">
+              <span className="text-sm"><strong>Error:</strong> {error}</span>
+              <button onClick={() => setError(null)} className="p-1 rounded-full hover:bg-destructive/80">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <GeminiPanel onGenerate={handleGenerate} isLoading={isLoading} />
           <ControlPanel
             sizeMetric={sizeMetric}
@@ -91,8 +100,8 @@ const App = () => {
             pulsationMode={pulsationMode}
             onPulsationModeChange={setPulsationMode}
             onFileUpload={handleFileUpload}
-            onLoadSample={() => setData(DEFAULT_DATA)}
-            onShowHelp={() => {}} // Placeholder for help dialog
+            onLoadSample={() => { setData(DEFAULT_DATA); setError(null); }}
+            onShowHelp={() => setShowHelp(true)}
           />
         </div>
         
@@ -110,6 +119,7 @@ const App = () => {
           />
         </div>
       </main>
+      <KeyboardShortcuts open={showHelp} onOpenChange={setShowHelp} />
     </div>
   );
 };

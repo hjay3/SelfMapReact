@@ -2,15 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { SelfMapData } from "../types/selfmap";
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  // This is a fallback for development environments where the key might not be set.
-  // In a real production environment, this should be handled more gracefully.
-  console.warn("API_KEY environment variable not set. Gemini API calls will fail.");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// fix: Per coding guidelines, initialize directly with process.env.API_KEY and remove fallback check.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const selfMapSchema = {
   type: Type.OBJECT,

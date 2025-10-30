@@ -13,8 +13,7 @@
     "react-dom": "^19.2.0",
     "@google/genai": "^1.28.0",
     "lucide-react": "^0.548.0",
-    "plotly.js": "^3.1.2",
-    "react-plotly.js": "^2.6.0"
+    "d3": "7"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

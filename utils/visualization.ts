@@ -1,4 +1,3 @@
-
 import { Entry, Position, SizeMetric, Association } from '../types/selfmap';
 
 const R_MAX = 120.0;
@@ -7,8 +6,8 @@ const CATEGORY_SECTORS: Record<string, [number, number]> = {
   'People': [0, 90],
   'Accomplishments': [90, 180],
   'Life Story': [180, 270],
-  'Ideas/Likes': [270, 360],
-  'Other': [270, 360]
+  'Ideas/Likes': [270, 340],
+  'Other': [340, 360]
 };
 
 const CATEGORY_COLORS: Record<string, [number, number, number]> = {
@@ -42,7 +41,7 @@ export const computePositionByValence = (entries: Entry[]): Record<string, Posit
   const positions: Record<string, Position> = {};
 
   Object.entries(byCategory).forEach(([category, items]) => {
-    const [startAngle, endAngle] = CATEGORY_SECTORS[category] || [270, 360];
+    const [startAngle, endAngle] = CATEGORY_SECTORS[category] || [340, 360];
     const sortedItems = [...items].sort((a, b) => a.label.localeCompare(b.label));
     
     sortedItems.forEach((item, index) => {
@@ -73,7 +72,7 @@ export const computePositionByPower = (entries: Entry[]): Record<string, Positio
   const positions: Record<string, Position> = {};
 
   Object.entries(byCategory).forEach(([category, items]) => {
-    const [startAngle, endAngle] = CATEGORY_SECTORS[category] || [270, 360];
+    const [startAngle, endAngle] = CATEGORY_SECTORS[category] || [340, 360];
     const sortedItems = [...items].sort((a, b) => a.label.localeCompare(b.label));
     
     sortedItems.forEach((item, index) => {
@@ -160,7 +159,6 @@ export const getColorsForCategory = (
     const adjustedL = Math.min(85, Math.max(35, l + powerBoost));
     const adjustedS = Math.min(100, Math.max(30, s + valenceBoost));
     
-    const hNorm = h / 360;
     const sNorm = adjustedS / 100;
     const lNorm = adjustedL / 100;
     

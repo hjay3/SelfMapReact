@@ -1,7 +1,6 @@
 
-import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import * as Plotly from 'plotly.js';
-import createPlotlyComponent from 'react-plotly.js/factory';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import * as d3 from 'd3';
 import { Entry, Association, SizeMetric, RadiusMode } from '../types/selfmap';
 import {
   computePositionByValence,
@@ -13,8 +12,6 @@ import {
   R_MAX
 } from '../utils/visualization';
 import { HoverInfo } from './HoverInfo';
-
-const Plot = createPlotlyComponent(Plotly);
 
 interface SelfMapVisualizationProps {
   entries: Entry[];
@@ -29,18 +26,14 @@ interface SelfMapVisualizationProps {
   onNodeClick?: (entry: Entry) => void;
   onNodeDoubleClick?: (entry: Entry) => void;
   highlightedNodes?: string[];
-  width?: number;
-  height?: number;
 }
 
-const CATEGORIES = ['People', 'Accomplishments', 'Life Story', 'Ideas/Likes', 'Other'];
-
-const CATEGORY_SYMBOLS: Record<string, string> = {
-  'People': 'circle',
-  'Accomplishments': 'square',
-  'Life Story': 'diamond',
-  'Ideas/Likes': 'cross',
-  'Other': 'triangle-up'
+const CATEGORY_SYMBOLS: Record<string, d3.SymbolType> = {
+  'People': d3.symbolCircle,
+  'Accomplishments': d3.symbolSquare,
+  'Life Story': d3.symbolDiamond,
+  'Ideas/Likes': d3.symbolCross,
+  'Other': d3.symbolTriangle
 };
 
 export const SelfMapVisualization = ({
@@ -53,188 +46,178 @@ export const SelfMapVisualization = ({
   sizeScale,
   opacity,
   pulsationMode,
-  onNodeClick,
-  onNodeDoubleClick,
-  highlightedNodes = [],
-  width,
-  height,
 }: SelfMapVisualizationProps) => {
+  const svgRef = useRef<SVGSVGElement>(null);
   const [hoveredEntry, setHoveredEntry] = useState<Entry | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
   const [hoveredImage, setHoveredImage] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
-  const imageTimeout = useRef<NodeJS.Timeout | null>(null);
-  const [dimmedNodes, setDimmedNodes] = useState<Set<string>>(new Set());
-  const clickTimeoutRef = useRef<number | null>(null);
+  const imageTimeout = useRef<number | null>(null);
 
-  const resolvedColors = useMemo(() => {
-    if (typeof window === 'undefined') return {}; // Guard for SSR
-    const style = getComputedStyle(document.documentElement);
-    const getColor = (name: string) => style.getPropertyValue(name).trim();
-    return {
-        border: getColor('--border'),
-        primary: getColor('--primary'),
-        foreground: getColor('--foreground'),
-        glassBg: getColor('--glass-bg'),
-        popover: getColor('--popover'),
-        popoverForeground: getColor('--popover-foreground'),
-        valencePositive: getColor('--valence-positive'),
-        valenceNegative: getColor('--valence-negative'),
-        valenceNeutral: getColor('--valence-neutral'),
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (imageTimeout.current) clearTimeout(imageTimeout.current);
-      if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
-    };
-  }, []);
-
-  const { positions, traces } = useMemo(() => {
-    if (!resolvedColors.border) return { positions: {}, traces: [] }; // Don't render if colors aren't resolved
-
+  const { positions, weightedDegrees, sizes, colors } = useMemo(() => {
     const positions = radiusMode === 'valence' ? computePositionByValence(entries) : computePositionByPower(entries);
     const weightedDegrees = calculateWeightedDegree(entries, associations);
+    const sizes = getSizesForCategory(entries, sizeMetric, weightedDegrees, sizeScale);
+    const colors = getColorsForCategory(entries, opacity);
+    return { positions, weightedDegrees, sizes, colors };
+  }, [entries, sizeMetric, radiusMode, sizeScale, opacity]);
 
-    const EDGE_STYLES: Record<string, { color: string; width: number }> = {
-      'affirms': { color: `hsla(${resolvedColors.valencePositive}, 0.45)`, width: 2 },
-      'threatens': { color: `hsla(${resolvedColors.valenceNegative}, 0.50)`, width: 2 },
-      'associates_with': { color: `hsla(${resolvedColors.valenceNeutral}, 0.40)`, width: 2 }
-    };
+  useEffect(() => {
+    if (!svgRef.current || entries.length === 0) return;
 
-    const traces: any[] = [];
-    const ringGuides = generateRingGuides(R_MAX);
-    ringGuides.forEach(ring => {
-      traces.push({ ...ring, mode: 'lines', line: { color: `hsla(${resolvedColors.border}, 0.3)`, width: 1 }, hoverinfo: 'skip', showlegend: false });
-    });
+    const svgElement = svgRef.current;
+    const width = svgElement.clientWidth;
+    const height = svgElement.clientHeight;
 
-    traces.push({ x: [-R_MAX, R_MAX], y: [0, 0], mode: 'lines', line: { color: `hsla(${resolvedColors.border}, 0.4)`, width: 1, dash: 'dot' }, hoverinfo: 'skip', showlegend: false });
-    traces.push({ x: [0, 0], y: [-R_MAX, R_MAX], mode: 'lines', line: { color: `hsla(${resolvedColors.border}, 0.4)`, width: 1, dash: 'dot' }, hoverinfo: 'skip', showlegend: false });
+    const svg = d3.select(svgElement);
+    svg.selectAll('*').remove(); // Clear previous renders
 
-    if (showEdges) {
-      Object.entries(EDGE_STYLES).forEach(([relation, style]) => {
-        const edgeX: (number | null)[] = [];
-        const edgeY: (number | null)[] = [];
-        associations.forEach(assoc => {
-          if (assoc.relation === relation) {
-            const srcPos = positions[assoc.src];
-            const dstPos = positions[assoc.dst];
-            if (srcPos && dstPos) {
-              edgeX.push(srcPos.x, dstPos.x, null);
-              edgeY.push(srcPos.y, dstPos.y, null);
-            }
-          }
-        });
-        if (edgeX.length > 0) traces.push({ x: edgeX, y: edgeY, mode: 'lines', line: style, hoverinfo: 'skip', showlegend: false });
+    const g = svg.append('g');
+
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.3, 5])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
       });
+    
+    // Set initial transform
+    const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(Math.min(width, height) / ((R_MAX + 40) * 2));
+    svg.call(zoom.transform, initialTransform);
+    svg.call(zoom);
+
+    // -- RINGS AND GUIDES --
+    const ringData = generateRingGuides(R_MAX);
+    g.selectAll('path.ring')
+      .data(ringData)
+      .enter().append('path')
+      .attr('class', 'ring')
+      .attr('d', d => {
+        const line = d3.line()
+          .x(p => p[0])
+          .y(p => p[1])
+          .curve(d3.curveBasisClosed);
+        const points: [number, number][] = d.x.map((x, i) => [x, d.y[i]]);
+        return line(points);
+      })
+      .attr('fill', 'none')
+      .attr('stroke', 'hsl(var(--border))')
+      .attr('stroke-opacity', 0.3)
+      .attr('stroke-width', 1);
+
+    g.append('line').attr('x1', -R_MAX).attr('x2', R_MAX).attr('y1', 0).attr('y2', 0).attr('stroke', 'hsl(var(--border))').attr('stroke-opacity', 0.4).attr('stroke-width', 1).attr('stroke-dasharray', '2,2');
+    g.append('line').attr('x1', 0).attr('x2', 0).attr('y1', -R_MAX).attr('y2', R_MAX).attr('stroke', 'hsl(var(--border))').attr('stroke-opacity', 0.4).attr('stroke-width', 1).attr('stroke-dasharray', '2,2');
+
+    // -- EDGES --
+    if (showEdges) {
+      const edgeGroup = g.append('g').attr('class', 'edges');
+      edgeGroup.selectAll('line.edge')
+        .data(associations)
+        .enter().append('line')
+        .attr('class', 'edge')
+        .attr('x1', d => positions[d.src]?.x ?? 0)
+        .attr('y1', d => positions[d.src]?.y ?? 0)
+        .attr('x2', d => positions[d.dst]?.x ?? 0)
+        .attr('y2', d => positions[d.dst]?.y ?? 0)
+        .attr('stroke', d => {
+            if (d.relation === 'affirms') return 'hsl(var(--valence-positive))';
+            if (d.relation === 'threatens') return 'hsl(var(--valence-negative))';
+            return 'hsl(var(--valence-neutral))';
+        })
+        .attr('stroke-opacity', 0.6)
+        .attr('stroke-width', d => 1 + d.weight * 2.5);
+    }
+    
+    // -- NODES --
+    const nodeGroup = g.append('g').attr('class', 'nodes');
+    const nodes = nodeGroup.selectAll('g.node')
+      .data(entries, (d: any) => d.label)
+      .join('g')
+      .attr('class', 'node')
+      .attr('transform', d => `translate(${positions[d.label]?.x ?? 0}, ${positions[d.label]?.y ?? 0})`)
+      .style('cursor', 'pointer');
+    
+    // Glow effect
+    nodes.append('path')
+      .attr('d', (d, i) => d3.symbol().type(CATEGORY_SYMBOLS[d.category]).size(sizes[i] * 2.5)())
+      .attr('fill', (d, i) => colors[i])
+      .style('opacity', 0.25);
+    
+    // Main symbol
+    nodes.append('path')
+      .attr('d', (d, i) => d3.symbol().type(CATEGORY_SYMBOLS[d.category]).size(sizes[i])())
+      .attr('fill', (d, i) => colors[i])
+      .attr('stroke', 'rgba(0,0,0,0.5)')
+      .attr('stroke-width', 1.5);
+      
+    // -- LABELS --
+    if (showLabels) {
+      const labelGroup = g.append('g').attr('class', 'labels');
+      const labels = labelGroup.selectAll('text.label')
+        .data(entries, (d: any) => d.label)
+        .join('text')
+        .attr('class', 'label')
+        .attr('x', d => (positions[d.label]?.x ?? 0))
+        .attr('y', d => (positions[d.label]?.y ?? 0) - 12)
+        .text(d => d.label)
+        .attr('fill', 'hsl(var(--foreground))')
+        .style('font-size', '10px')
+        .attr('text-anchor', 'middle')
+        .style('pointer-events', 'none')
+        .attr('opacity', 0.88);
     }
 
-    traces.push({ x: [0], y: [0], mode: 'markers+text', marker: { size: 20, color: `hsl(${resolvedColors.primary})`, symbol: 'star', line: { color: `hsl(${resolvedColors.primary})`, width: 2 } }, text: ['Self'], textposition: 'top center', textfont: { color: `hsl(${resolvedColors.foreground})`, size: 12 }, hovertemplate: 'Self<extra></extra>', name: 'Self', showlegend: false });
+    // -- CENTER "SELF" STAR --
+    g.append('path')
+      .attr('d', d3.symbol().type(d3.symbolStar).size(400)())
+      .attr('fill', 'hsl(var(--primary))');
+    g.append('text')
+      .attr('x', 0).attr('y', -18)
+      .text('Self')
+      .attr('fill', 'hsl(var(--foreground))')
+      .style('font-size', '12px').attr('text-anchor', 'middle');
 
-    CATEGORIES.forEach(category => {
-      const categoryEntries = entries.filter(e => e.category === category);
-      if (categoryEntries.length === 0) return;
-
-      const xs = categoryEntries.map(e => positions[e.label]?.x ?? 0);
-      const ys = categoryEntries.map(e => positions[e.label]?.y ?? 0);
-      const sizes = getSizesForCategory(categoryEntries, sizeMetric, weightedDegrees, sizeScale);
-      const colors = getColorsForCategory(categoryEntries, opacity);
-      
-      const displayColors = colors.map((color, idx) => dimmedNodes.has(categoryEntries[idx].label) ? color.replace(/[\d.]+\)$/, '0.15)') : color);
-
-      traces.push({
-        x: xs, y: ys, mode: 'markers',
-        marker: { size: sizes.map(s => Math.min(80, s * 1.55 + 8)), color: displayColors.map(c => c.replace(/[\d.]+\)$/, '0.10)')), symbol: CATEGORY_SYMBOLS[category], line: { width: 0 } },
-        hoverinfo: 'skip', showlegend: false
+    // -- INTERACTIVITY --
+    nodes.on('mouseover', function(event, d) {
+      setHoveredEntry(d);
+      const connected = new Set([d.label]);
+      associations.forEach(a => {
+        if (a.src === d.label) connected.add(a.dst);
+        if (a.dst === d.label) connected.add(a.src);
       });
 
-      traces.push({
-        x: xs, y: ys, mode: showLabels ? 'markers+text' : 'markers', text: categoryEntries.map(e => e.label), textposition: 'top center', textfont: { color: `hsla(${resolvedColors.foreground}, 0.88)`, size: 10 },
-        marker: {
-          size: sizes.map((s, i) => selectedEntry?.label === categoryEntries[i].label ? s * 1.3 : (highlightedNodes.includes(categoryEntries[i].label) ? s * 1.15 : s)),
-          color: displayColors, symbol: CATEGORY_SYMBOLS[category],
-          line: {
-            color: displayColors.map((_, i) => selectedEntry?.label === categoryEntries[i].label ? `hsl(${resolvedColors.foreground})` : (highlightedNodes.includes(categoryEntries[i].label) ? `hsla(${resolvedColors.foreground}, 0.7)` : (dimmedNodes.has(categoryEntries[i].label) ? `hsla(${resolvedColors.foreground}, 0.15)` : 'hsla(0,0%,0%,0.45)'))),
-            width: displayColors.map((_, i) => selectedEntry?.label === categoryEntries[i].label ? 2.5 : (highlightedNodes.includes(categoryEntries[i].label) ? 1.8 : 1.3))
-          }
-        },
-        customdata: categoryEntries, hovertemplate: '%{customdata.label}<br>Category: %{customdata.category}<br>Power: %{customdata.power:.0%}<br>Valence: %{customdata.valence:+.2f}<extra></extra>',
-        name: category, showlegend: true
-      });
-    });
-
-    return { positions, traces };
-  }, [entries, associations, sizeMetric, radiusMode, showEdges, showLabels, sizeScale, opacity, dimmedNodes, selectedEntry, highlightedNodes, resolvedColors]);
-
-  const layout = useMemo(() => ({
-    template: 'plotly_dark',
-    width, height,
-    paper_bgcolor: 'transparent',
-    plot_bgcolor: 'transparent',
-    margin: { l: 20, r: 20, t: 80, b: 60 },
-    title: { text: `Self Map — ${entries.length} entries, ${associations.length} associations`, x: 0.5, xanchor: 'center', font: { color: `hsl(${resolvedColors.foreground})`, size: 24 } },
-    legend: { bgcolor: `hsla(${resolvedColors.glassBg}, 0.6)`, font: { color: `hsl(${resolvedColors.foreground})`, size: 12 }, orientation: 'h', y: 1.05, x: 0.5, xanchor: 'center', yanchor: 'top' },
-    hovermode: 'closest',
-    hoverlabel: { bgcolor: `hsl(${resolvedColors.popover})`, bordercolor: `hsl(${resolvedColors.border})`, font: { color: `hsl(${resolvedColors.popoverForeground})`, size: 12 } },
-    xaxis: { visible: false, range: [-R_MAX - 16, R_MAX + 16], constrain: 'domain' },
-    yaxis: { visible: false, range: [-R_MAX - 16, R_MAX + 16], scaleanchor: 'x', scaleratio: 1 },
-    autosize: true,
-  }), [width, height, entries.length, associations.length, resolvedColors]);
-
-  const handleHover = (event: any) => {
-    if (event.points?.[0]?.customdata) {
-      const entry = event.points[0].customdata as Entry;
-      setHoveredEntry(entry);
-      
-      const connected = new Set<string>([entry.label]);
-      associations.forEach(assoc => {
-        if (assoc.src === entry.label) connected.add(assoc.dst);
-        if (assoc.dst === entry.label) connected.add(assoc.src);
-      });
-      setDimmedNodes(new Set([...entries.map(e => e.label)].filter(l => !connected.has(l))));
+      nodes.transition().duration(200).style('opacity', n => connected.has(n.label) ? 1.0 : 0.2);
+      d3.selectAll('.edge').transition().duration(200).style('opacity', e => (e.src === d.label || e.dst === d.label) ? 1.0 : 0.1);
       
       if (imageTimeout.current) clearTimeout(imageTimeout.current);
-      
-      const entryIndex = entries.findIndex(e => e.label === entry.label);
-      setHoveredImage(`https://picsum.photos/seed/${entry.label}/200`);
+      setHoveredImage(`https://picsum.photos/seed/${d.label}/200`);
       setImageError(false);
-      
-      imageTimeout.current = setTimeout(() => setHoveredImage(null), 30000);
-    }
-  };
+      imageTimeout.current = window.setTimeout(() => setHoveredImage(null), 30000);
+    })
+    .on('mouseout', function() {
+      setHoveredEntry(null);
+      nodes.transition().duration(200).style('opacity', 1.0);
+      d3.selectAll('.edge').transition().duration(200).style('opacity', 0.6);
+    })
+    .on('click', function(event, d) {
+      setSelectedEntry(prev => prev?.label === d.label ? null : d);
+    });
 
-  const handleUnhover = () => {
-    setHoveredEntry(null);
-    setDimmedNodes(new Set());
-  };
+    // Update selected/highlighted styles
+    nodes.select('path:last-child')
+        .transition().duration(200)
+        .attr('stroke', d => selectedEntry?.label === d.label ? 'hsl(var(--foreground))' : 'rgba(0,0,0,0.5)')
+        .attr('stroke-width', d => selectedEntry?.label === d.label ? 3 : 1.5);
 
-  const handleClick = useCallback((event: any) => {
-    if (event.points?.[0]?.customdata) {
-      const entry = event.points[0].customdata as Entry;
-      if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
-      clickTimeoutRef.current = window.setTimeout(() => {
-        setSelectedEntry(prev => prev?.label === entry.label ? null : entry);
-        onNodeClick?.(entry);
-      }, 250);
-    }
-  }, [onNodeClick]);
+  }, [entries, associations, positions, sizes, colors, showEdges, showLabels, selectedEntry]);
 
-  const handleDoubleClick = useCallback((event: any) => {
-    if (event.points?.[0]?.customdata) {
-      if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
-      onNodeDoubleClick?.(event.points[0].customdata as Entry);
-    }
-  }, [onNodeDoubleClick]);
-
+  // Handle keyboard escape
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setSelectedEntry(null);
         setHoveredEntry(null);
-        setDimmedNodes(new Set());
-        setHoveredImage(null);
         if (imageTimeout.current) clearTimeout(imageTimeout.current);
+        setHoveredImage(null);
       }
     };
     window.addEventListener('keydown', handleKeyPress);
@@ -242,7 +225,7 @@ export const SelfMapVisualization = ({
   }, []);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full overflow-hidden">
       <div className="absolute top-4 right-4 z-10">
         <HoverInfo entry={hoveredEntry} visible={!!hoveredEntry} />
       </div>
@@ -257,18 +240,8 @@ export const SelfMapVisualization = ({
         </div>
       )}
       
-      <div className={`w-full h-full relative overflow-hidden ${pulsationMode ? 'pulsation-active' : ''}`}>
-        <Plot
-          data={traces}
-          layout={layout}
-          config={{ displayModeBar: false, responsive: true }}
-          onHover={handleHover}
-          onUnhover={handleUnhover}
-          onClick={handleClick}
-          onDoubleClick={handleDoubleClick}
-          style={{ width: '100%', height: '100%' }}
-          useResizeHandler
-        />
+      <div className={`w-full h-full ${pulsationMode ? 'pulsation-active' : ''}`}>
+        <svg ref={svgRef} width="100%" height="100%"></svg>
       </div>
     </div>
   );
