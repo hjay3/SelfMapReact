@@ -1,0 +1,210 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Self Map AI Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Using a style tag to inject the user's provided CSS design system */
+      @layer base {
+        :root {
+          --background: 222 40% 7%;
+          --foreground: 210 40% 98%;
+
+          --card: 225 35% 10%;
+          --card-foreground: 210 40% 98%;
+
+          --popover: 225 35% 10%;
+          --popover-foreground: 210 40% 98%;
+
+          --primary: 45 100% 65%;
+          --primary-foreground: 222 40% 7%;
+
+          --secondary: 217 32% 17%;
+          --secondary-foreground: 210 40% 98%;
+
+          --muted: 217 32% 17%;
+          --muted-foreground: 215 20% 65%;
+
+          --accent: 142 70% 55%;
+          --accent-foreground: 222 40% 7%;
+
+          --destructive: 0 84% 60%;
+          --destructive-foreground: 210 40% 98%;
+
+          --border: 217 32% 22%;
+          --input: 217 32% 17%;
+          --ring: 45 100% 65%;
+
+          --radius: 0.75rem;
+
+          /* Category colors - distinct base hues */
+          --category-people: 280 70% 60%;        /* Purple/Magenta */
+          --category-accomplishments: 45 95% 60%; /* Gold/Yellow */
+          --category-lifestory: 200 75% 55%;     /* Cyan/Blue */
+          --category-ideas: 140 70% 55%;         /* Green */
+          --category-other: 0 0% 62%;            /* Gray */
+
+          /* Valence colors */
+          --valence-positive: 142 70% 55%;
+          --valence-negative: 0 84% 60%;
+          --valence-neutral: 0 0% 62%;
+
+          /* Glass effects */
+          --glass-bg: 225 35% 12%;
+          --glass-border: 210 40% 25%;
+
+          /* Shadows */
+          --shadow-glow: 0 0 40px hsl(45 100% 65% / 0.15);
+          --shadow-category-glow: 0 0 30px currentColor;
+          --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          --transition-bounce: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+      }
+
+      @layer base {
+        * {
+          border-color: hsl(var(--border));
+        }
+
+        body {
+          background-color: hsl(var(--background));
+          color: hsl(var(--foreground));
+          font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+        }
+      }
+
+      @layer components {
+        .glass-panel {
+          background-color: hsla(var(--glass-bg) / 0.4);
+          backdrop-filter: blur(16px);
+          border: 1px solid hsl(var(--glass-border));
+          border-radius: var(--radius);
+          box-shadow: 0 8px 32px 0 rgba(0,0,0,0.37);
+          transition: var(--transition-smooth);
+        }
+
+        .glass-panel:hover {
+          border-color: hsla(var(--glass-border) / 0.5);
+          box-shadow: var(--shadow-glow);
+        }
+        
+        .image-preview {
+          position: fixed;
+          bottom: 1rem;
+          left: 1rem;
+          z-index: 50;
+          border-radius: 0.5rem;
+          overflow: hidden;
+          box-shadow: 0 8px 32px 0 rgba(0,0,0,0.37);
+          border: 2px solid hsla(var(--primary) / 0.3);
+          background-color: hsla(var(--background) / 0.95);
+          backdrop-filter: blur(8px);
+          animation: fadeInSlideUp 0.3s ease-out;
+        }
+
+        @keyframes fadeInSlideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .pulsation-active {
+          animation: intense-pulsation 2.5s ease-in-out infinite;
+        }
+
+        @keyframes intense-pulsation {
+          0%, 100% {
+            filter: brightness(1) saturate(1) hue-rotate(0deg);
+            transform: scale(1);
+          }
+          50% {
+            filter: brightness(1.2) saturate(1.3) hue-rotate(15deg);
+            transform: scale(1.015);
+          }
+        }
+
+        .pulse-glow {
+          animation: intense-glow 1.5s ease-in-out infinite;
+        }
+
+        @keyframes intense-glow {
+          0%, 100% {
+            filter: brightness(1) drop-shadow(0 0 10px currentColor);
+            transform: scale(1);
+          }
+          50% {
+            filter: brightness(1.4) drop-shadow(0 0 25px currentColor);
+            transform: scale(1.05);
+          }
+        }
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              border: 'hsl(var(--border))',
+              input: 'hsl(var(--input))',
+              ring: 'hsl(var(--ring))',
+              background: 'hsl(var(--background))',
+              foreground: 'hsl(var(--foreground))',
+              primary: {
+                DEFAULT: 'hsl(var(--primary))',
+                foreground: 'hsl(var(--primary-foreground))',
+              },
+              secondary: {
+                DEFAULT: 'hsl(var(--secondary))',
+                foreground: 'hsl(var(--secondary-foreground))',
+              },
+              destructive: {
+                DEFAULT: 'hsl(var(--destructive))',
+                foreground: 'hsl(var(--destructive-foreground))',
+              },
+              muted: {
+                DEFAULT: 'hsl(var(--muted))',
+                foreground: 'hsl(var(--muted-foreground))',
+              },
+              accent: {
+                DEFAULT: 'hsl(var(--accent))',
+                foreground: 'hsl(var(--accent-foreground))',
+              },
+              popover: {
+                DEFAULT: 'hsl(var(--popover))',
+                foreground: 'hsl(var(--popover-foreground))',
+              },
+              card: {
+                DEFAULT: 'hsl(var(--card))',
+                foreground: 'hsl(var(--card-foreground))',
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: `calc(var(--radius) - 4px)`,
+            },
+          }
+        }
+      }
+    </script>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.548.0",
+    "plotly.js": "https://aistudiocdn.com/plotly.js@^3.1.2",
+    "react-plotly.js/": "https://aistudiocdn.com/react-plotly.js@^2.6.0/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "Self Map AI Visualizer",
+  "description": "An advanced tool to visualize personal identity maps. Generate complex psychological and narrative structures from text prompts using the Gemini API, and explore them through an interactive force-directed graph.",
+  "requestFramePermissions": []
+}
